@@ -376,6 +376,7 @@
     </div>
     <div class="controls">
       <button class="ctrl-btn" id="btn-call">📢 קרא לילדים</button>
+      <button class="ctrl-btn" id="btn-swap" style="display:none;">🔄 החלף שומר</button>
       <button class="ctrl-btn" id="btn-sign">🛑 הרם תמרור</button>
     </div>
   </div>
@@ -418,7 +419,7 @@ const snd = {
 };
 
 // =============== GAME ===============
-const game = { lives: 3, score: 0, level: 1, maxLevel: 5, kidsAcross: 0, state: 'idle', timeMin: 0, timeSec: 0, late: false, combo: 0, comboBest: 0 };
+const game = { lives: 3, score: 0, level: 1, maxLevel: 7, kidsAcross: 0, state: 'idle', timeMin: 0, timeSec: 0, late: false, combo: 0, comboBest: 0 };
 let floatingTexts = [];
 let droppedItems = [];
 let distractionTimer = 0;
@@ -444,6 +445,8 @@ const BOOTH = { x: 30, y: 18, w: 200, h: 78 };
 
 let player = null;
 let secondGuard = null;
+let thirdGuard = null;
+let fourthGuard = null;
 let kids = [];
 let cars = [];
 let booth = null;
@@ -481,16 +484,20 @@ const TIME_END = 65;
 
 const LEVELS = [
   null,
-  // Level 1: calm intro, one-way. Small waves, big gaps to give clear windows
+  // Level 1: one-way, 1 guard, calm intro
   { oneWay: true, carBaseSpawnMs: 4500, carMinSpawnMs: 3200, carSpeed: 1.7, kidBaseSpawnMs: 7000, kidMinSpawnMs: 5000, waveSize: 2, distractions: false, twoGuards: false, popsicle: false },
-  // Level 2: one-way, bigger waves, popsicle temptation + distractions
+  // Level 2: one-way, 1 guard, distractions + popsicle
   { oneWay: true, carBaseSpawnMs: 3800, carMinSpawnMs: 2500, carSpeed: 2.0, kidBaseSpawnMs: 6000, kidMinSpawnMs: 3800, waveSize: 3, distractions: true, twoGuards: false, popsicle: true },
-  // Level 3: one-way, chaos + two guards
+  // Level 3: one-way, 2 guards — calm intro to switching between them
+  { oneWay: true, carBaseSpawnMs: 4000, carMinSpawnMs: 2800, carSpeed: 1.9, kidBaseSpawnMs: 6500, kidMinSpawnMs: 4200, waveSize: 3, distractions: false, twoGuards: true, popsicle: false },
+  // Level 4: one-way, 2 guards + distractions + popsicle (advanced same setup)
   { oneWay: true, carBaseSpawnMs: 3200, carMinSpawnMs: 2000, carSpeed: 2.3, kidBaseSpawnMs: 5500, kidMinSpawnMs: 3200, waveSize: 4, distractions: true, twoGuards: true, popsicle: true },
-  // Level 4: TWO-WAY road (cars from both sides), one guard
-  { oneWay: false, carBaseSpawnMs: 4000, carMinSpawnMs: 2500, carSpeed: 1.8, kidBaseSpawnMs: 6500, kidMinSpawnMs: 4000, waveSize: 3, distractions: true, twoGuards: false, popsicle: true },
-  // Level 5: TWO-WAY + two guards on OPPOSITE sides of the road
-  { oneWay: false, carBaseSpawnMs: 3200, carMinSpawnMs: 1900, carSpeed: 2.2, kidBaseSpawnMs: 5500, kidMinSpawnMs: 3000, waveSize: 4, distractions: true, twoGuards: true, popsicle: true }
+  // Level 5: TWO-WAY road — must have 2 guards (one per direction)
+  { oneWay: false, carBaseSpawnMs: 4000, carMinSpawnMs: 2500, carSpeed: 1.8, kidBaseSpawnMs: 6500, kidMinSpawnMs: 4000, waveSize: 3, distractions: false, twoGuards: true, popsicle: false },
+  // Level 6: TWO-WAY + two guards + distractions/popsicle
+  { oneWay: false, carBaseSpawnMs: 3200, carMinSpawnMs: 1900, carSpeed: 2.2, kidBaseSpawnMs: 5500, kidMinSpawnMs: 3000, waveSize: 4, distractions: true, twoGuards: true, popsicle: true },
+  // Level 7: WIDE road with traffic island, 4 guards
+  { oneWay: false, carBaseSpawnMs: 3000, carMinSpawnMs: 1700, carSpeed: 2.3, kidBaseSpawnMs: 5000, kidMinSpawnMs: 2800, waveSize: 4, distractions: true, twoGuards: true, popsicle: true, hasIsland: true, fourGuards: true }
 ];
 
 function initLevel() {
@@ -542,6 +549,28 @@ function initLevel() {
   } else {
     secondGuard = null;
   }
+  // Third and fourth guards for L7 — stand on the TRAFFIC ISLAND (median)
+  // #3 on top-side of island (manages TOP lane, sign extends UP into top lane)
+  // #4 on bottom-side of island (manages BOTTOM lane, sign extends DOWN into bottom lane)
+  if (L.fourGuards) {
+    thirdGuard = {
+      x: CROSSWALK_X - 50, y: LANE_DIVIDER - 45,
+      w: 36, h: 56, facing: 'up', walkPhase: 0, isMoving: false,
+      hasVest: true, hasSign: true, signRaised: false, onIsland: true,
+      shirt: '#22c55e', pants: '#1e293b', hair: '#7c2d12', skin: '#fdba74'
+    };
+    fourthGuard = {
+      x: CROSSWALK_X + CROSSWALK_W + 14, y: LANE_DIVIDER + 5,
+      w: 36, h: 56, facing: 'down', walkPhase: 0, isMoving: false,
+      hasVest: true, hasSign: true, signRaised: false, onIsland: true,
+      shirt: '#22c55e', pants: '#1e293b', hair: '#7c2d12', skin: '#fdba74'
+    };
+  } else {
+    thirdGuard = null;
+    fourthGuard = null;
+  }
+  // Show/hide swap button based on presence of second guard
+  document.getElementById('btn-swap').style.display = L.twoGuards ? 'flex' : 'none';
 
   // Player starts to the right of the booth
   player = {
@@ -594,9 +623,7 @@ window.addEventListener('keydown', e => {
   }
   if (e.key === 'Tab' && secondGuard) {
     e.preventDefault();
-    game.activeGuard = game.activeGuard === 'player' ? 'second' : 'player';
-    snd.pickup();
-    showHint(game.activeGuard === 'second' ? '🎮 שולט במשמר זה"ב #2' : '🎮 שולט בשומר הראשון', 1200);
+    swapGuards();
   }
 });
 window.addEventListener('keyup', e => { keys[e.key] = false; });
@@ -680,20 +707,11 @@ function handleStageTap(clientX, clientY) {
     }
   }
 
-  // Switch active guard by clicking on the other guard
-  if (secondGuard) {
-    const inPlayer = wx >= player.x && wx <= player.x + player.w && wy >= player.y && wy <= player.y + player.h;
-    const inSecond = wx >= secondGuard.x && wx <= secondGuard.x + secondGuard.w && wy >= secondGuard.y && wy <= secondGuard.y + secondGuard.h;
-    if (inSecond && game.activeGuard !== 'second') {
-      game.activeGuard = 'second';
-      snd.pickup();
-      showHint('🎮 שולט עכשיו במשמר זה"ב #2', 1500);
-    } else if (inPlayer && game.activeGuard !== 'player') {
-      game.activeGuard = 'player';
-      snd.pickup();
-      showHint('🎮 שולט עכשיו בשומר הראשון', 1500);
-    }
-  }
+  // Tap-to-move: click sets a movement target for the active guard
+  const ctrl = (game.activeGuard === 'second' && secondGuard) ? secondGuard : player;
+  ctrl.tapTargetX = wx - ctrl.w/2;
+  ctrl.tapTargetY = wy - ctrl.h/2;
+  ctrl.tapTargetActive = true;
 }
 canvas.addEventListener('click', e => handleStageTap(e.clientX, e.clientY));
 canvas.addEventListener('touchstart', e => {
@@ -701,6 +719,21 @@ canvas.addEventListener('touchstart', e => {
     handleStageTap(e.touches[0].clientX, e.touches[0].clientY);
   }
 }, { passive: true });
+
+// Swap guards — cycle through available guards
+function swapGuards() {
+  const order = ['player'];
+  if (secondGuard) order.push('second');
+  if (thirdGuard) order.push('third');
+  if (fourthGuard) order.push('fourth');
+  if (order.length < 2) return;
+  const idx = order.indexOf(game.activeGuard);
+  game.activeGuard = order[(idx + 1) % order.length];
+  snd.pickup();
+  const num = order.indexOf(game.activeGuard) + 1;
+  showHint(`🎮 שולט במשמר זה"ב #${num}`, 1200);
+}
+document.getElementById('btn-swap').addEventListener('click', swapGuards);
 
 // Buttons
 document.getElementById('btn-call').addEventListener('click', () => {
@@ -782,13 +815,30 @@ function update(dt) {
   if (hintTimer <= 0) document.getElementById('hint-container').innerHTML = '';
 
   // Movement controls the ACTIVE guard
-  const ctrl = (game.activeGuard === 'second' && secondGuard) ? secondGuard : player;
+  let ctrl = player;
+  if (game.activeGuard === 'second' && secondGuard) ctrl = secondGuard;
+  else if (game.activeGuard === 'third' && thirdGuard) ctrl = thirdGuard;
+  else if (game.activeGuard === 'fourth' && fourthGuard) ctrl = fourthGuard;
   let dx = 0, dy = 0;
   if (keys['ArrowLeft'] || keys['a'] || keys['A']) dx -= 1;
   if (keys['ArrowRight'] || keys['d'] || keys['D']) dx += 1;
   if (keys['ArrowUp'] || keys['w'] || keys['W']) dy -= 1;
   if (keys['ArrowDown'] || keys['s'] || keys['S']) dy += 1;
   dx += joyState.dx; dy += joyState.dy;
+  // Tap-to-move: use if no manual input
+  const anyManual = Math.abs(dx) > 0.05 || Math.abs(dy) > 0.05;
+  if (anyManual && ctrl.tapTargetActive) ctrl.tapTargetActive = false; // manual overrides
+  if (!anyManual && ctrl.tapTargetActive) {
+    const tdx = ctrl.tapTargetX - ctrl.x;
+    const tdy = ctrl.tapTargetY - ctrl.y;
+    const tdist = Math.hypot(tdx, tdy);
+    if (tdist > 3) {
+      dx = tdx / tdist;
+      dy = tdy / tdist;
+    } else {
+      ctrl.tapTargetActive = false;
+    }
+  }
   const mag = Math.hypot(dx, dy);
   if (mag > 0.1) {
     dx /= mag; dy /= mag;
@@ -801,13 +851,20 @@ function update(dt) {
   } else {
     ctrl.isMoving = false;
   }
-  // Player constrained to top half, second guard to bottom half
+  // Constrain each guard to its allowed area
+  ctrl.x = Math.max(0, Math.min(W - ctrl.w, ctrl.x));
   if (ctrl === player) {
-    player.x = Math.max(0, Math.min(W - player.w, player.x));
-    player.y = Math.max(0, Math.min(ROAD_Y - player.h + 4, player.y));
-  } else {
-    secondGuard.x = Math.max(0, Math.min(W - secondGuard.w, secondGuard.x));
-    secondGuard.y = Math.max(ROAD_END - 4, Math.min(H - secondGuard.h, secondGuard.y));
+    // Top sidewalk
+    ctrl.y = Math.max(0, Math.min(ROAD_Y - ctrl.h + 4, ctrl.y));
+  } else if (ctrl === secondGuard) {
+    // Bottom sidewalk
+    ctrl.y = Math.max(ROAD_END - 4, Math.min(H - ctrl.h, ctrl.y));
+  } else if (ctrl === thirdGuard) {
+    // Top half of the island
+    ctrl.y = Math.max(LANE_DIVIDER - 55, Math.min(LANE_DIVIDER - 10, ctrl.y));
+  } else if (ctrl === fourthGuard) {
+    // Bottom half of the island
+    ctrl.y = Math.max(LANE_DIVIDER - 5, Math.min(LANE_DIVIDER + 35, ctrl.y));
   }
 
   // Equipment pickup
@@ -914,8 +971,10 @@ function update(dt) {
     if ((cars[i].dir > 0 && cars[i].x > W + 100) || (cars[i].dir < 0 && cars[i].x < -100)) cars.splice(i, 1);
   }
 
-  // Sync second guard's sign with player
+  // Sync all secondary guards' signs with player's
   if (secondGuard) secondGuard.signRaised = player.signRaised;
+  if (thirdGuard) thirdGuard.signRaised = player.signRaised;
+  if (fourthGuard) fourthGuard.signRaised = player.signRaised;
 
   // Kids walk when game is active (state is set to 'escorting' after gear pickup)
   if (game.state === 'escorting' || game.state === 'ready') updateKids();
@@ -1460,6 +1519,12 @@ function draw() {
   if (secondGuard) {
     drawables.push({ y: secondGuard.y + secondGuard.h, draw: () => drawSecondGuard() });
   }
+  if (thirdGuard) {
+    drawables.push({ y: thirdGuard.y + thirdGuard.h, draw: () => drawExtraGuardTop(thirdGuard, 3) });
+  }
+  if (fourthGuard) {
+    drawables.push({ y: fourthGuard.y + fourthGuard.h, draw: () => drawExtraGuardBottom(fourthGuard, 4) });
+  }
   if (popsicleVendor) {
     drawables.push({ y: popsicleVendor.y + popsicleVendor.h, draw: () => drawPopsicleVendor() });
   }
@@ -1627,6 +1692,30 @@ function drawWorld() {
     if (i % 2 === 0) ctx.fillRect(CROSSWALK_X + i * stripeW, ROAD_Y + 4, stripeW - 4, ROAD_H - 8);
   }
 
+  // Traffic island (L7) — median in the middle of the road
+  if (LL && LL.hasIsland) {
+    const islandY = LANE_DIVIDER - 35;
+    const islandH = 70;
+    // Island base (curb)
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillRect(0, islandY - 2, CROSSWALK_X - 8, islandH + 4);
+    ctx.fillRect(CROSSWALK_X + CROSSWALK_W + 8, islandY - 2, W - CROSSWALK_X - CROSSWALK_W - 8, islandH + 4);
+    // Island surface (paved)
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(0, islandY, CROSSWALK_X - 8, islandH);
+    ctx.fillRect(CROSSWALK_X + CROSSWALK_W + 8, islandY, W - CROSSWALK_X - CROSSWALK_W - 8, islandH);
+    // Yellow reflectors on ends
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(CROSSWALK_X - 12, islandY + 4, 4, islandH - 8);
+    ctx.fillRect(CROSSWALK_X + CROSSWALK_W + 8, islandY + 4, 4, islandH - 8);
+    // Sign in the middle (pedestrian symbol)
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🚸', 60, islandY + islandH/2 + 5);
+    ctx.fillText('🚸', W - 60, islandY + islandH/2 + 5);
+  }
+
   // Stop-line glow when sign raised
   if (player && player.signRaised) {
     ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
@@ -1642,12 +1731,18 @@ function drawWorld() {
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(CORRECT_ZONE_X_MIN, ROAD_Y - 30, CORRECT_ZONE_X_MAX - CORRECT_ZONE_X_MIN, 26);
     ctx.setLineDash([]);
-    // Label
-    ctx.fillStyle = correctNow ? '#16a34a' : '#a16207';
-    ctx.font = 'bold 10px Heebo';
-    ctx.textAlign = 'center';
-    ctx.fillText('מקום המשמר', (CORRECT_ZONE_X_MIN + CORRECT_ZONE_X_MAX) / 2, ROAD_Y - 34);
+    // Label — skipped on mobile
+    if (!isMobile()) {
+      ctx.fillStyle = correctNow ? '#16a34a' : '#a16207';
+      ctx.font = 'bold 10px Heebo';
+      ctx.textAlign = 'center';
+      ctx.fillText('מקום המשמר', (CORRECT_ZONE_X_MIN + CORRECT_ZONE_X_MAX) / 2, ROAD_Y - 34);
+    }
   }
+}
+
+function isMobile() {
+  return window.innerWidth < 700;
 }
 
 function drawBooth() {
@@ -2001,8 +2096,8 @@ function drawCharacter(c, isPlayer = false) {
     }
   }
 
-  // "You" label for player at start
-  if (isPlayer && frameCount < 180) {
+  // "You" label for player at start (skipped on mobile — too crowded)
+  if (isPlayer && frameCount < 180 && !isMobile()) {
     const txt = 'זה אתה';
     ctx.font = 'bold 11px Heebo';
     ctx.textAlign = 'center';
@@ -2025,6 +2120,17 @@ function drawCharacter(c, isPlayer = false) {
 }
 
 function drawPlayer() { drawCharacter(player, true); }
+function drawExtraGuardTop(g, num) {
+  // Third guard on top-side of island — sign extends UP into top lane (use second-guard style)
+  const original = secondGuard;
+  secondGuard = g;
+  drawSecondGuard();
+  secondGuard = original;
+}
+function drawExtraGuardBottom(g, num) {
+  // Fourth guard on bottom-side of island — sign extends DOWN into bottom lane (use player style)
+  drawCharacter(g, true);
+}
 
 function drawPopsicleVendor() {
   const v = popsicleVendor;
@@ -2247,17 +2353,19 @@ function drawSecondGuard() {
     drawStopSign(bodyW/2 + 14, bodyY + bodyH * 0.5, 0.8);
   }
 
-  // Label "שומר שני"
-  ctx.fillStyle = '#facc15';
-  ctx.font = 'bold 10px Heebo';
-  ctx.textAlign = 'center';
-  const txt = 'משמר זה"ב #2';
-  const tw = ctx.measureText(txt).width;
-  ctx.fillStyle = 'rgba(15,23,42,0.7)';
-  roundRect(-tw/2 - 4, c.h + 2, tw + 8, 12, 6);
-  ctx.fill();
-  ctx.fillStyle = '#facc15';
-  ctx.fillText(txt, 0, c.h + 10);
+  // Label "משמר זה"ב #2" — skipped on mobile
+  if (!isMobile()) {
+    ctx.fillStyle = '#facc15';
+    ctx.font = 'bold 10px Heebo';
+    ctx.textAlign = 'center';
+    const txt = 'משמר זה"ב #2';
+    const tw = ctx.measureText(txt).width;
+    ctx.fillStyle = 'rgba(15,23,42,0.7)';
+    roundRect(-tw/2 - 4, c.h + 2, tw + 8, 12, 6);
+    ctx.fill();
+    ctx.fillStyle = '#facc15';
+    ctx.fillText(txt, 0, c.h + 10);
+  }
 
   ctx.restore();
 }
