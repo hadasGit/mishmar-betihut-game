@@ -196,9 +196,9 @@
   #joystick {
     position: absolute;
     bottom: 20px;
-    left: 20px;
-    width: 110px;
-    height: 110px;
+    right: 20px;
+    width: 120px;
+    height: 120px;
     background: radial-gradient(circle, rgba(15,23,42,0.6) 0%, rgba(15,23,42,0.3) 100%);
     border: 3px solid rgba(250, 204, 21, 0.4);
     border-radius: 50%;
@@ -237,21 +237,21 @@
 
   /* Controls */
   .controls {
-    background: linear-gradient(180deg, #1e293b, #0f172a);
-    padding: 12px;
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
     display: flex;
-    justify-content: center;
-    gap: 12px;
-    flex-shrink: 0;
-    border-top: 2px solid #facc15;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 8;
   }
   .ctrl-btn {
-    flex: 1;
-    max-width: 200px;
-    padding: 16px 18px;
+    flex: 0 0 auto;
+    width: 130px;
+    padding: 12px 14px;
     border: none;
-    border-radius: 16px;
-    font-size: 16px;
+    border-radius: 14px;
+    font-size: 14px;
     font-weight: 900;
     cursor: pointer;
     font-family: inherit;
@@ -320,11 +320,21 @@
   .stat-value { font-size: 28px; font-weight: 900; color: #facc15; }
   .stat-label { font-size: 12px; color: #94a3b8; }
 
-  @media (max-width: 600px) {
-    .title-main { font-size: 38px; }
-    .title-sub { font-size: 18px; }
-    #joystick { width: 100px; height: 100px; bottom: 15px; left: 15px; }
+  @media (max-width: 700px) {
+    .title-main { font-size: 34px; }
+    .title-sub { font-size: 16px; }
+    #joystick { width: 108px; height: 108px; bottom: 15px; right: 15px; }
     #joystick-knob { width: 44px; height: 44px; }
+    /* Compact HUD */
+    .hud { padding: 8px 8px; font-size: 12px; gap: 4px; }
+    .hud-lives { font-size: 16px; letter-spacing: 2px; }
+    .hud-pill { padding: 3px 8px; font-size: 11px; }
+    .hud-level { padding: 3px 8px; font-size: 11px; }
+    /* Move hint below HUD to not overlap kids */
+    .hint { top: 6px; padding: 6px 12px; font-size: 11px; max-width: 96%; }
+    /* Buttons on left */
+    .controls { bottom: 10px; left: 8px; gap: 6px; }
+    .ctrl-btn { width: 110px; padding: 9px 10px; font-size: 12px; }
   }
 </style>
 </head>
@@ -348,7 +358,12 @@
         קח אפוד ותמרור מעמדת השומר, עצור את המכוניות והעבר את הילדים בבטחה לצד השני.<br>
         <strong style="color:#facc15;">אל תיתן לאף ילד להיפגע!</strong>
       </div>
-      <button class="btn" onclick="goTutorial()">▶ שחק</button>
+      <input type="text" id="username-input" placeholder="השם שלך" maxlength="16" style="
+        padding: 12px 16px; font-size: 16px; font-weight: 700; text-align: center;
+        border: 2px solid #facc15; border-radius: 12px; background: rgba(15,23,42,0.6);
+        color: #fff; margin-bottom: 12px; width: 220px; font-family: inherit;">
+      <button class="btn" onclick="startFromTitle()">▶ שחק</button>
+      <button class="btn btn-blue" onclick="showLeaderboard()" style="margin-top: 10px; font-size: 16px;">🏆 לוח תוצאות</button>
     </div>
 
     <div class="screen" id="screen-tutorial">
@@ -924,12 +939,20 @@ function update(dt) {
     kids.forEach(k => { if (k.state !== 'crossed' && k.state !== 'hit') k.sad = true; });
   }
 
-  // Gradual pace ramp: 0% at 7:20, 100% at 8:00 (45-min span)
+  // Pace: cars ramp up linearly. Kids follow a BELL CURVE peaking at 07:50 and thinning to 08:05.
   const elapsed = Math.max(0, game.timeMin - TIME_START);
   const totalSpan = TIME_END - TIME_START;
   const paceT = Math.min(1, elapsed / totalSpan);
   const carSpawnMs = L.carBaseSpawnMs + (L.carMinSpawnMs - L.carBaseSpawnMs) * paceT;
-  const kidSpawnMs = L.kidBaseSpawnMs + (L.kidMinSpawnMs - L.kidBaseSpawnMs) * paceT;
+  // Kid intensity: 0 at 07:20, ramps up until peak at 07:50 (T=0.67), then tapers to slower by 08:05
+  const KID_PEAK_T = 0.67;
+  let kidIntensity;
+  if (paceT < KID_PEAK_T) {
+    kidIntensity = paceT / KID_PEAK_T; // 0 → 1 up to peak
+  } else {
+    kidIntensity = 1 - ((paceT - KID_PEAK_T) / (1 - KID_PEAK_T)) * 0.7; // 1 → 0.3 after peak
+  }
+  const kidSpawnMs = L.kidBaseSpawnMs - (L.kidBaseSpawnMs - L.kidMinSpawnMs) * kidIntensity;
 
   // Spawn cars throughout the shift — but leave clear windows
   // Don't spawn a new car if the crosswalk is currently blocked (gives player a chance to raise sign)
@@ -1450,9 +1473,10 @@ function levelComplete() {
   const isLast = game.level >= game.maxLevel;
   const advance = () => {
     if (isLast) {
+      saveScore(game.playerName || 'משמר אנונימי', game.score);
       showModal('🏆', 'גיבור בטיחות!', 'השלמת את כל השלבים! מעכשיו הילדים יכולים לסמוך עליך 100%.',
         [{ label: 'נקודות', value: game.score }, { label: 'חיים', value: game.lives }],
-        () => { hideModal(); backToTitle(); }, 'התחל מחדש 🔄');
+        () => { hideModal(); showLeaderboard(); }, 'לוח תוצאות 🏆');
     } else {
       // Show trivia between levels
       showTrivia(() => {
@@ -1469,6 +1493,7 @@ function levelComplete() {
 function gameOver(msg) {
   game.state = 'lost';
   snd.lose();
+  saveScore(game.playerName || 'משמר אנונימי', game.score);
   showModal('💔', 'Game Over', msg + '<br><br>גיבור אמיתי מנסה שוב.',
     [{ label: 'נקודות', value: game.score }, { label: 'שלב', value: game.level }],
     () => { hideModal(); backToTitle(); }, 'התחל מחדש 🔄');
@@ -2474,11 +2499,68 @@ function kickLoop() {
 }
 
 // =============== ENTRY ===============
+function startFromTitle() {
+  const input = document.getElementById('username-input');
+  const name = (input.value || '').trim() || 'משמר אנונימי';
+  game.playerName = name;
+  try { localStorage.setItem('mishmar_name', name); } catch(e) {}
+  goTutorial();
+}
 function goTutorial() {
   ensureAudio();
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-tutorial').classList.add('active');
 }
+// Leaderboard using localStorage
+function loadLeaderboard() {
+  try { return JSON.parse(localStorage.getItem('mishmar_scores') || '[]'); } catch(e) { return []; }
+}
+function saveScore(name, score) {
+  const board = loadLeaderboard();
+  board.push({ name, score, date: new Date().toISOString().slice(0, 10) });
+  board.sort((a, b) => b.score - a.score);
+  const top = board.slice(0, 20);
+  try { localStorage.setItem('mishmar_scores', JSON.stringify(top)); } catch(e) {}
+}
+function showLeaderboard() {
+  const board = loadLeaderboard().slice(0, 10);
+  const html = board.length === 0
+    ? '<div style="color:#94a3b8; font-size:15px; padding:20px 0;">עדיין אין תוצאות. שחק כדי להיות ראשון!</div>'
+    : `<table style="width:100%; border-collapse:collapse; font-size:14px;">
+        <tr style="color:#facc15; font-weight:900;">
+          <th style="padding:8px; text-align:right;">#</th>
+          <th style="padding:8px; text-align:right;">שם</th>
+          <th style="padding:8px; text-align:left;">ניקוד</th>
+        </tr>
+        ${board.map((e, i) => `
+          <tr style="border-top:1px solid #334155;">
+            <td style="padding:8px; text-align:right;">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1)}</td>
+            <td style="padding:8px; text-align:right;">${e.name}</td>
+            <td style="padding:8px; text-align:left; color:#facc15; font-weight:900;">${e.score}</td>
+          </tr>
+        `).join('')}
+      </table>`;
+  document.getElementById('m-icon').textContent = '🏆';
+  document.getElementById('m-title').textContent = 'לוח תוצאות';
+  document.getElementById('m-title').className = 'modal-title info';
+  document.getElementById('m-text').innerHTML = html;
+  document.getElementById('m-stats').style.display = 'none';
+  const btn = document.getElementById('m-btn');
+  btn.textContent = 'סגור';
+  btn.style.display = 'inline-block';
+  btn.onclick = hideModal;
+  document.getElementById('modal').classList.add('show');
+}
+// Load saved name on page load
+(function loadSavedName() {
+  try {
+    const savedName = localStorage.getItem('mishmar_name');
+    if (savedName) {
+      const el = document.getElementById('username-input');
+      if (el) el.value = savedName;
+    }
+  } catch(e) {}
+})();
 function beginLevel() {
   ensureAudio();
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
